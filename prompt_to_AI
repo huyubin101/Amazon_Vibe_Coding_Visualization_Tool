@@ -1,0 +1,15 @@
+Build a single-file HTML analytics dashboard with a dark theme (near-black background ~#0a0a0f, lime green accent ~#c8ff57, purple secondary ~#7b61ff, red alert ~#ff6b6b). Use Syne for headings and DM Mono for labels/numbers. Include a subtle grid-line background texture.
+Upload screen: 5 file cards in a grid, each with a status dot that turns lime when loaded, and a "Launch Dashboard" button that only activates once all files are uploaded. Parse CSVs with PapaParse.
+After upload, render a full dashboard with:
+
+A sticky top bar with brand name, metric/granularity dropdowns, and a reset button
+A KPI row in a 3-column grid (2 rows) showing: Total Revenue, Total Orders, Unique Customers, Avg Order Value, Late Deliveries, On-Time Rate — with large clamp()-sized values in accent colors, no overflow clipping
+A line chart (revenue/orders/late deliveries switchable, weekly/monthly) with a gradient fill using Chart.js
+A doughnut chart for payment method breakdown
+A ranked category table with inline progress bars
+An order status pie chart + summary pills
+A horizontal bar chart for revenue by geographic region
+A day × hour heatmap showing order timing, colored by intensity in the accent color
+A category revenue bar chart
+
+All sections separated by 1px borders, no rounded cards — editorial/brutalist layout feel. Fully responsive with CSS grid breakpoints. Use Chart.js from CDN. Join all datasets in memory via JavaScript Maps before rendering.
