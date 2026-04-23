@@ -1,0 +1,1234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Order Intelligence — Analytics</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --surface: #111118;
+    --surface2: #18181f;
+    --border: #ffffff0f;
+    --accent: #c8ff57;
+    --accent2: #7b61ff;
+    --accent3: #ff6b6b;
+    --text: #f0f0f5;
+    --muted: #5a5a72;
+    --muted2: #3a3a4a;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Syne', sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* GRID NOISE BACKGROUND */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: 
+      linear-gradient(rgba(255,255,255,0.015) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.015) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  #app { position: relative; z-index: 1; }
+
+  /* ---- UPLOAD SCREEN ---- */
+  #upload-screen {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 20px;
+  }
+
+  .badge {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    color: var(--accent);
+    border: 1px solid var(--accent);
+    padding: 4px 12px;
+    border-radius: 100px;
+    margin-bottom: 28px;
+    text-transform: uppercase;
+    display: inline-block;
+  }
+
+  .upload-title {
+    font-size: clamp(36px, 6vw, 72px);
+    font-weight: 800;
+    line-height: 1.05;
+    text-align: center;
+    margin-bottom: 16px;
+    letter-spacing: -0.02em;
+  }
+
+  .upload-title span { color: var(--accent); }
+
+  .upload-sub {
+    color: var(--muted);
+    font-size: 15px;
+    text-align: center;
+    margin-bottom: 60px;
+    max-width: 480px;
+    line-height: 1.6;
+    font-family: 'DM Mono', monospace;
+  }
+
+  .file-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 12px;
+    width: 100%;
+    max-width: 900px;
+    margin-bottom: 40px;
+  }
+
+  .file-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 24px 20px;
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .file-card::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: var(--accent);
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+
+  .file-card:hover { border-color: var(--accent); transform: translateY(-2px); }
+  .file-card.loaded { border-color: var(--accent); }
+  .file-card.loaded::before { opacity: 0.04; }
+
+  .file-card .card-label {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-bottom: 12px;
+  }
+
+  .file-card .card-name {
+    font-size: 16px;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+
+  .file-card .card-cols {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    color: var(--muted);
+    line-height: 1.6;
+  }
+
+  .file-card .card-status {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--muted2);
+    transition: background 0.3s;
+  }
+
+  .file-card.loaded .card-status { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+  .file-card.error .card-status { background: var(--accent3); }
+
+  .file-card input[type=file] { display: none; }
+
+  .go-btn {
+    background: var(--accent);
+    color: #0a0a0f;
+    border: none;
+    padding: 18px 52px;
+    font-family: 'Syne', sans-serif;
+    font-size: 15px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    border-radius: 100px;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-transform: uppercase;
+    opacity: 0.4;
+    pointer-events: none;
+  }
+
+  .go-btn.ready { opacity: 1; pointer-events: all; }
+  .go-btn.ready:hover { transform: scale(1.04); box-shadow: 0 0 40px rgba(200,255,87,0.3); }
+  .go-btn.ready:active { transform: scale(0.98); }
+
+  /* ---- DASHBOARD ---- */
+  #dashboard { display: none; padding: 0 0 80px; }
+
+  .top-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 40px;
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    background: rgba(10,10,15,0.9);
+    backdrop-filter: blur(20px);
+    z-index: 100;
+  }
+
+  .brand {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .brand-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 10px var(--accent);
+    animation: throb 2s infinite;
+  }
+
+  @keyframes throb {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  .top-controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .ctrl-select {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    padding: 8px 14px;
+    border-radius: 8px;
+    outline: none;
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+  }
+
+  .ctrl-select:focus { border-color: var(--accent); }
+
+  .reset-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    padding: 8px 14px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  .reset-btn:hover { border-color: var(--accent3); color: var(--accent3); }
+
+  /* KPI ROW */
+  .kpi-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1px;
+    background: var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .kpi-card {
+    background: var(--surface);
+    padding: 36px 40px 32px;
+    position: relative;
+    overflow: visible;
+    transition: background 0.2s;
+    min-width: 0;
+  }
+
+  .kpi-card:hover { background: var(--surface2); }
+
+  .kpi-label {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-bottom: 14px;
+    white-space: nowrap;
+  }
+
+  .kpi-val {
+    font-size: clamp(32px, 3.5vw, 52px);
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    line-height: 1;
+    white-space: nowrap;
+    overflow: visible;
+  }
+
+  .kpi-val.accent { color: var(--accent); }
+  .kpi-val.red { color: var(--accent3); }
+  .kpi-val.purple { color: var(--accent2); }
+
+  .kpi-sub {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 10px;
+    white-space: nowrap;
+  }
+
+  /* CHART GRID */
+  .chart-grid {
+    display: grid;
+    grid-template-columns: 1.6fr 1fr;
+    gap: 1px;
+    background: var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .chart-panel {
+    background: var(--surface);
+    padding: 36px;
+  }
+
+  .panel-title {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.16em;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+
+  .panel-headline {
+    font-size: 20px;
+    font-weight: 800;
+    margin-bottom: 28px;
+    letter-spacing: -0.01em;
+  }
+
+  .chart-wrap { position: relative; height: 280px; }
+
+  /* LOWER GRID */
+  .lower-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 1px;
+    background: var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+
+  /* HEATMAP */
+  .heatmap-container { overflow-x: auto; }
+
+  .heatmap-row {
+    display: grid;
+    grid-template-columns: 36px repeat(24, 1fr);
+    gap: 3px;
+    margin-bottom: 3px;
+  }
+
+  .hm-label {
+    font-family: 'DM Mono', monospace;
+    font-size: 9px;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    padding-right: 6px;
+  }
+
+  .hm-cell {
+    aspect-ratio: 1;
+    border-radius: 3px;
+    transition: transform 0.15s;
+    cursor: default;
+    min-width: 16px;
+  }
+
+  .hm-cell:hover { transform: scale(1.4); z-index: 10; }
+
+  .hour-labels {
+    display: grid;
+    grid-template-columns: 36px repeat(24, 1fr);
+    gap: 3px;
+    margin-bottom: 10px;
+  }
+
+  .hour-lbl {
+    font-family: 'DM Mono', monospace;
+    font-size: 8px;
+    color: var(--muted2);
+    text-align: center;
+  }
+
+  /* CATEGORY TABLE */
+  .cat-table { width: 100%; }
+
+  .cat-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .cat-row:last-child { border-bottom: none; }
+
+  .cat-rank {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    color: var(--muted2);
+    width: 20px;
+    flex-shrink: 0;
+  }
+
+  .cat-name {
+    font-size: 13px;
+    font-weight: 600;
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-transform: capitalize;
+  }
+
+  .cat-bar-wrap {
+    width: 80px;
+    height: 4px;
+    background: var(--muted2);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .cat-bar { height: 100%; background: var(--accent); border-radius: 2px; }
+  .cat-val {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    width: 50px;
+    text-align: right;
+  }
+
+  /* PAYMENT BREAKDOWN */
+  .pay-chart-wrap { height: 220px; position: relative; }
+
+  /* STATUS PILLS */
+  .status-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .status-pill {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+  }
+
+  .status-pill .sp-val {
+    font-size: 20px;
+    font-weight: 800;
+    margin-bottom: 2px;
+  }
+
+  .status-pill .sp-lbl {
+    font-family: 'DM Mono', monospace;
+    font-size: 9px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+  }
+
+  /* FULL-WIDTH TREND ROW */
+  .full-panel {
+    background: var(--surface);
+    padding: 36px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .trend-controls {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 28px;
+    align-items: flex-end;
+    justify-content: space-between;
+  }
+
+  /* SCROLLBAR */
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--muted2); border-radius: 4px; }
+
+  /* LOADER */
+  #loader {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(10,10,15,0.9);
+    z-index: 9999;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 24px;
+  }
+
+  .loader-ring {
+    width: 56px;
+    height: 56px;
+    border: 2px solid var(--border);
+    border-top: 2px solid var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .loader-text {
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    color: var(--muted);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  /* TOOLTIP */
+  .tooltip-box {
+    position: fixed;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    color: var(--text);
+    pointer-events: none;
+    z-index: 200;
+    white-space: nowrap;
+    opacity: 0;
+    transition: opacity 0.1s;
+  }
+
+  @media (max-width: 1100px) {
+    .kpi-row { grid-template-columns: repeat(2, 1fr); }
+  }
+
+  @media (max-width: 900px) {
+    .chart-grid { grid-template-columns: 1fr; }
+    .lower-grid { grid-template-columns: 1fr; }
+    .top-bar { padding: 16px 20px; flex-wrap: wrap; gap: 10px; }
+    .kpi-row { grid-template-columns: repeat(2, 1fr); }
+    .kpi-card { padding: 24px 20px; }
+    .chart-panel { padding: 24px 20px; }
+    .full-panel { padding: 24px 20px; }
+  }
+
+  @media (max-width: 500px) {
+    .kpi-row { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- UPLOAD SCREEN -->
+  <div id="upload-screen">
+    <span class="badge">Order Intelligence v2</span>
+    <h1 class="upload-title">Drop your data.<br><span>See everything.</span></h1>
+    <p class="upload-sub">Upload your 5 CSV files below, then hit Launch. The full analysis renders instantly.</p>
+
+    <div class="file-grid">
+      <div class="file-card" id="card-orders" onclick="document.getElementById('f-orders').click()">
+        <div class="card-status"></div>
+        <div class="card-label">01 — Orders</div>
+        <div class="card-name">orders_rev_df</div>
+        <div class="card-cols">order_id · customer_id<br>order_status · timestamps</div>
+        <input type="file" id="f-orders" accept=".csv">
+      </div>
+      <div class="file-card" id="card-items" onclick="document.getElementById('f-items').click()">
+        <div class="card-status"></div>
+        <div class="card-label">02 — Order Items</div>
+        <div class="card-name">df_OrderItems</div>
+        <div class="card-cols">order_id · product_id<br>price · shipping_charges</div>
+        <input type="file" id="f-items" accept=".csv">
+      </div>
+      <div class="file-card" id="card-products" onclick="document.getElementById('f-products').click()">
+        <div class="card-status"></div>
+        <div class="card-label">03 — Products</div>
+        <div class="card-name">df_Products</div>
+        <div class="card-cols">product_id · category<br>weight · dimensions</div>
+        <input type="file" id="f-products" accept=".csv">
+      </div>
+      <div class="file-card" id="card-payments" onclick="document.getElementById('f-payments').click()">
+        <div class="card-status"></div>
+        <div class="card-label">04 — Payments</div>
+        <div class="card-name">df_Payments</div>
+        <div class="card-cols">order_id · payment_type<br>installments · value</div>
+        <input type="file" id="f-payments" accept=".csv">
+      </div>
+      <div class="file-card" id="card-customers" onclick="document.getElementById('f-customers').click()">
+        <div class="card-status"></div>
+        <div class="card-label">05 — Customers</div>
+        <div class="card-name">df_Customers</div>
+        <div class="card-cols">customer_id · city<br>state · zip_code</div>
+        <input type="file" id="f-customers" accept=".csv">
+      </div>
+    </div>
+
+    <button class="go-btn" id="go-btn" onclick="buildDashboard()">Launch Dashboard</button>
+  </div>
+
+  <!-- LOADER -->
+  <div id="loader" style="display:none; position:fixed; inset:0; background:rgba(10,10,15,0.95); z-index:9999; align-items:center; justify-content:center; flex-direction:column; gap:24px;">
+    <div class="loader-ring"></div>
+    <div class="loader-text" id="loader-text">Joining datasets…</div>
+  </div>
+
+  <!-- DASHBOARD -->
+  <div id="dashboard">
+    <div class="top-bar">
+      <div class="brand">
+        <div class="brand-dot"></div>
+        Order Intelligence
+      </div>
+      <div class="top-controls">
+        <select class="ctrl-select" id="trend-metric">
+          <option value="revenue">Revenue</option>
+          <option value="orders">Orders</option>
+          <option value="late">Late Deliveries</option>
+        </select>
+        <select class="ctrl-select" id="trend-gran">
+          <option value="monthly">Monthly</option>
+          <option value="weekly">Weekly</option>
+        </select>
+        <button class="reset-btn" onclick="location.reload()">↺ Reset</button>
+      </div>
+    </div>
+
+    <!-- KPI ROW -->
+    <div class="kpi-row">
+      <div class="kpi-card">
+        <div class="kpi-label">Total Revenue</div>
+        <div class="kpi-val accent" id="k-rev">—</div>
+        <div class="kpi-sub" id="k-rev-sub"></div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Total Orders</div>
+        <div class="kpi-val" id="k-orders">—</div>
+        <div class="kpi-sub" id="k-orders-sub"></div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Unique Customers</div>
+        <div class="kpi-val purple" id="k-custs">—</div>
+        <div class="kpi-sub" id="k-custs-sub"></div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Avg Order Value</div>
+        <div class="kpi-val" id="k-aov">—</div>
+        <div class="kpi-sub">per delivered order</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Late Deliveries</div>
+        <div class="kpi-val red" id="k-late">—</div>
+        <div class="kpi-sub" id="k-late-sub"></div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">On-Time Rate</div>
+        <div class="kpi-val accent" id="k-ontime">—</div>
+        <div class="kpi-sub">of delivered orders</div>
+      </div>
+    </div>
+
+    <!-- TREND + PAYMENT CHART ROW -->
+    <div class="chart-grid">
+      <div class="chart-panel">
+        <div class="panel-title">Time Series</div>
+        <div class="panel-headline" id="trend-headline">Revenue Over Time</div>
+        <div class="chart-wrap"><canvas id="trend-chart"></canvas></div>
+      </div>
+      <div class="chart-panel">
+        <div class="panel-title">Payment Mix</div>
+        <div class="panel-headline">Payment Methods</div>
+        <div class="pay-chart-wrap"><canvas id="pay-chart"></canvas></div>
+      </div>
+    </div>
+
+    <!-- LOWER GRID: CATEGORIES + HEATMAP + STATUS -->
+    <div class="lower-grid">
+      <!-- Top Categories -->
+      <div class="chart-panel">
+        <div class="panel-title">By Volume</div>
+        <div class="panel-headline">Top Categories</div>
+        <div id="cat-table" class="cat-table"></div>
+      </div>
+
+      <!-- Order Status -->
+      <div class="chart-panel">
+        <div class="panel-title">Fulfillment</div>
+        <div class="panel-headline">Order Status</div>
+        <div class="chart-wrap" style="height:220px; margin-bottom:20px;"><canvas id="status-chart"></canvas></div>
+        <div class="status-grid" id="status-grid"></div>
+      </div>
+
+      <!-- State Map / Revenue by State -->
+      <div class="chart-panel">
+        <div class="panel-title">Geography</div>
+        <div class="panel-headline">Revenue by State</div>
+        <div class="chart-wrap" style="height:320px;"><canvas id="geo-chart"></canvas></div>
+      </div>
+    </div>
+
+    <!-- HEATMAP FULL WIDTH -->
+    <div class="full-panel">
+      <div class="trend-controls">
+        <div>
+          <div class="panel-title">Order Timing</div>
+          <div class="panel-headline">Purchase Heatmap — Day × Hour</div>
+        </div>
+      </div>
+      <div class="heatmap-container">
+        <div id="heatmap-inner" style="min-width:700px;"></div>
+      </div>
+    </div>
+
+    <!-- REVENUE TREND BOTTOM FULL -->
+    <div class="full-panel">
+      <div class="trend-controls">
+        <div>
+          <div class="panel-title">Category Deep-Dive</div>
+          <div class="panel-headline">Revenue by Category</div>
+        </div>
+      </div>
+      <div class="chart-wrap" style="height:320px;"><canvas id="cat-rev-chart"></canvas></div>
+    </div>
+
+  </div>
+</div>
+
+<div class="tooltip-box" id="tooltip"></div>
+
+<script>
+// =============================================
+// DATA STORE
+// =============================================
+const DS = { orders: null, items: null, products: null, payments: null, customers: null };
+let loadedCount = 0;
+
+const FILE_MAP = {
+  'f-orders':    { key: 'orders',    card: 'card-orders' },
+  'f-items':     { key: 'items',     card: 'card-items' },
+  'f-products':  { key: 'products',  card: 'card-products' },
+  'f-payments':  { key: 'payments',  card: 'card-payments' },
+  'f-customers': { key: 'customers', card: 'card-customers' },
+};
+
+Object.entries(FILE_MAP).forEach(([inputId, meta]) => {
+  document.getElementById(inputId).addEventListener('change', function(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const card = document.getElementById(meta.card);
+    card.querySelector('.card-status').style.background = '#7b61ff';
+    Papa.parse(file, {
+      header: true, dynamicTyping: true, skipEmptyLines: true,
+      complete: (res) => {
+        DS[meta.key] = res.data;
+        card.classList.add('loaded');
+        loadedCount++;
+        if (loadedCount === 5) {
+          document.getElementById('go-btn').classList.add('ready');
+        }
+      }
+    });
+  });
+});
+
+// =============================================
+// CHART DEFAULTS
+// =============================================
+Chart.defaults.color = '#5a5a72';
+Chart.defaults.borderColor = '#ffffff0f';
+Chart.defaults.font.family = 'DM Mono';
+Chart.defaults.font.size = 10;
+
+let charts = {};
+
+function destroyChart(id) {
+  if (charts[id]) { charts[id].destroy(); delete charts[id]; }
+}
+
+// =============================================
+// BUILD DASHBOARD
+// =============================================
+function buildDashboard() {
+  if (loadedCount < 5) return;
+  showLoader('Joining datasets…');
+
+  setTimeout(() => {
+    try {
+      const data = joinData();
+      renderKPIs(data);
+      renderTrend(data);
+      renderPayments(data);
+      renderCategories(data);
+      renderStatus(data);
+      renderGeo(data);
+      renderHeatmap(data);
+      renderCatRevenue(data);
+
+      document.getElementById('upload-screen').style.display = 'none';
+      document.getElementById('dashboard').style.display = 'block';
+      hideLoader();
+
+      // Wire controls
+      ['trend-metric','trend-gran'].forEach(id => {
+        document.getElementById(id).addEventListener('change', () => renderTrend(data));
+      });
+    } catch(err) {
+      hideLoader();
+      alert('Error processing data: ' + err.message);
+      console.error(err);
+    }
+  }, 80);
+}
+
+// =============================================
+// JOIN DATA
+// =============================================
+function joinData() {
+  showLoader('Building product map…');
+
+  // Product map: id -> category
+  const productMap = {};
+  DS.products.forEach(p => {
+    if (p.product_id) productMap[String(p.product_id).trim()] = (p.product_category_name || 'other').replace(/_/g,' ');
+  });
+
+  // Items map: order_id -> { revenue, categories[] }
+  showLoader('Aggregating order items…');
+  const itemsMap = {};
+  DS.items.forEach(i => {
+    const oid = String(i.order_id || '').trim();
+    if (!oid) return;
+    if (!itemsMap[oid]) itemsMap[oid] = { revenue: 0, categories: [] };
+    itemsMap[oid].revenue += (parseFloat(i.price) || 0) + (parseFloat(i.shipping_charges) || 0);
+    const cat = productMap[String(i.product_id || '').trim()];
+    if (cat) itemsMap[oid].categories.push(cat);
+  });
+
+  // Payments map: order_id -> { type, installments, value }
+  const payMap = {};
+  DS.payments.forEach(p => {
+    const oid = String(p.order_id || '').trim();
+    if (!oid) return;
+    if (!payMap[oid]) payMap[oid] = { type: p.payment_type, installments: p.payment_installments, value: parseFloat(p.payment_value) || 0 };
+  });
+
+  // Customer map: id -> { city, state }
+  const custMap = {};
+  DS.customers.forEach(c => {
+    if (c.customer_id) custMap[String(c.customer_id).trim()] = { city: c.customer_city, state: c.customer_state };
+  });
+
+  showLoader('Building master dataset…');
+
+  // Master join
+  const master = DS.orders.map(o => {
+    const oid = String(o.order_id || '').trim();
+    const cid = String(o.customer_id || '').trim();
+    const items = itemsMap[oid] || { revenue: 0, categories: [] };
+    const pay = payMap[oid] || { type: 'unknown', installments: 1, value: 0 };
+    const cust = custMap[cid] || { city: '', state: '' };
+
+    const delivered = o.order_delivered_timestamp ? new Date(o.order_delivered_timestamp) : null;
+    const estimated = o.order_estimated_delivery_date ? new Date(o.order_estimated_delivery_date) : null;
+    const isLate = delivered && estimated && delivered > estimated;
+
+    return {
+      order_id: oid,
+      customer_id: cid,
+      status: (o.order_status || '').trim(),
+      purchase_ts: o.order_purchase_timestamp ? new Date(o.order_purchase_timestamp) : null,
+      delivered_ts: delivered,
+      estimated_ts: estimated,
+      is_late: isLate,
+      revenue: items.revenue,
+      categories: items.categories,
+      pay_type: pay.type,
+      pay_value: pay.value,
+      state: cust.state,
+      city: cust.city
+    };
+  }).filter(o => o.order_id);
+
+  return master;
+}
+
+// =============================================
+// KPIs
+// =============================================
+function renderKPIs(data) {
+  const totalRev = data.reduce((s,o) => s + o.revenue, 0);
+  const uniqueCusts = new Set(data.map(o=>o.customer_id)).size;
+  const delivered = data.filter(o => o.status === 'delivered');
+  const lateCount = data.filter(o => o.is_late).length;
+  const onTime = delivered.length > 0 ? ((delivered.length - lateCount) / delivered.length * 100) : 0;
+  const aov = delivered.length > 0 ? (delivered.reduce((s,o)=>s+o.revenue,0) / delivered.length) : 0;
+
+  document.getElementById('k-rev').textContent = '$' + fmt(totalRev);
+  document.getElementById('k-rev-sub').textContent = 'across all orders';
+  document.getElementById('k-orders').textContent = data.length.toLocaleString();
+  document.getElementById('k-orders-sub').textContent = delivered.length.toLocaleString() + ' delivered';
+  document.getElementById('k-custs').textContent = uniqueCusts.toLocaleString();
+  document.getElementById('k-custs-sub').textContent = 'unique buyers';
+  document.getElementById('k-aov').textContent = '$' + aov.toFixed(2);
+  document.getElementById('k-late').textContent = lateCount.toLocaleString();
+  document.getElementById('k-late-sub').textContent = (delivered.length > 0 ? (lateCount/delivered.length*100).toFixed(1) : 0) + '% of delivered';
+  document.getElementById('k-ontime').textContent = onTime.toFixed(1) + '%';
+}
+
+// =============================================
+// TREND CHART
+// =============================================
+function renderTrend(data) {
+  const metric = document.getElementById('trend-metric').value;
+  const gran = document.getElementById('trend-gran').value;
+
+  const headlines = { revenue: 'Revenue Over Time', orders: 'Order Volume', late: 'Late Deliveries' };
+  document.getElementById('trend-headline').textContent = headlines[metric];
+
+  const groups = {};
+  data.forEach(o => {
+    const d = o.purchase_ts;
+    if (!d || isNaN(d)) return;
+    let key;
+    if (gran === 'monthly') {
+      key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    } else {
+      const day = new Date(d);
+      day.setDate(d.getDate() - d.getDay());
+      key = day.toISOString().slice(0,10);
+    }
+    if (!groups[key]) groups[key] = 0;
+    if (metric === 'revenue') groups[key] += o.revenue;
+    else if (metric === 'orders') groups[key] += 1;
+    else if (metric === 'late') groups[key] += o.is_late ? 1 : 0;
+  });
+
+  const labels = Object.keys(groups).sort();
+  const values = labels.map(l => groups[l]);
+
+  destroyChart('trend');
+  const ctx = document.getElementById('trend-chart').getContext('2d');
+
+  const grad = ctx.createLinearGradient(0, 0, 0, 280);
+  grad.addColorStop(0, metric === 'late' ? 'rgba(255,107,107,0.25)' : 'rgba(200,255,87,0.2)');
+  grad.addColorStop(1, 'rgba(0,0,0,0)');
+
+  charts.trend = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        data: values,
+        borderColor: metric === 'late' ? '#ff6b6b' : '#c8ff57',
+        backgroundColor: grad,
+        fill: true,
+        tension: 0.4,
+        borderWidth: 2,
+        pointRadius: 0,
+        pointHoverRadius: 4
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: {
+        callbacks: {
+          label: ctx => metric === 'revenue' ? '$' + fmt(ctx.parsed.y) : ctx.parsed.y.toLocaleString()
+        }
+      }},
+      scales: {
+        x: { ticks: { maxTicksLimit: 12, maxRotation: 0 } },
+        y: { ticks: { callback: v => metric === 'revenue' ? '$' + fmtK(v) : v.toLocaleString() } }
+      }
+    }
+  });
+}
+
+// =============================================
+// PAYMENT CHART
+// =============================================
+function renderPayments(data) {
+  const payGroups = {};
+  data.forEach(o => {
+    const t = (o.pay_type || 'unknown').replace(/_/g,' ');
+    payGroups[t] = (payGroups[t] || 0) + 1;
+  });
+
+  const labels = Object.keys(payGroups);
+  const values = labels.map(l => payGroups[l]);
+  const colors = ['#c8ff57','#7b61ff','#ff6b6b','#38bdf8','#fb923c'];
+
+  destroyChart('pay');
+  const ctx = document.getElementById('pay-chart').getContext('2d');
+  charts.pay = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels,
+      datasets: [{
+        data: values,
+        backgroundColor: colors.slice(0, labels.length),
+        borderWidth: 0,
+        hoverOffset: 8
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      cutout: '65%',
+      plugins: {
+        legend: { position: 'right', labels: { boxWidth: 10, padding: 14 } }
+      }
+    }
+  });
+}
+
+// =============================================
+// CATEGORIES TABLE
+// =============================================
+function renderCategories(data) {
+  const cats = {};
+  data.forEach(o => o.categories.forEach(c => cats[c] = (cats[c]||0) + 1));
+  const sorted = Object.entries(cats).sort((a,b)=>b[1]-a[1]).slice(0,12);
+  const max = sorted[0]?.[1] || 1;
+
+  const container = document.getElementById('cat-table');
+  container.innerHTML = sorted.map(([name, count], i) => `
+    <div class="cat-row">
+      <div class="cat-rank">${String(i+1).padStart(2,'0')}</div>
+      <div class="cat-name">${name}</div>
+      <div class="cat-bar-wrap"><div class="cat-bar" style="width:${count/max*100}%"></div></div>
+      <div class="cat-val">${count.toLocaleString()}</div>
+    </div>
+  `).join('');
+}
+
+// =============================================
+// ORDER STATUS
+// =============================================
+function renderStatus(data) {
+  const statusGroups = {};
+  data.forEach(o => { statusGroups[o.status] = (statusGroups[o.status]||0) + 1; });
+  const entries = Object.entries(statusGroups).sort((a,b)=>b[1]-a[1]);
+
+  const colorMap = {
+    delivered: '#c8ff57', shipped: '#7b61ff', processing: '#38bdf8',
+    canceled: '#ff6b6b', unavailable: '#fb923c', invoiced: '#f59e0b',
+    'order created': '#94a3b8'
+  };
+
+  destroyChart('status');
+  const ctx = document.getElementById('status-chart').getContext('2d');
+  charts.status = new Chart(ctx, {
+    type: 'pie',
+    data: {
+      labels: entries.map(e=>e[0]),
+      datasets: [{
+        data: entries.map(e=>e[1]),
+        backgroundColor: entries.map(e => colorMap[e[0]] || '#3a3a4a'),
+        borderWidth: 0,
+        hoverOffset: 6
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } }
+    }
+  });
+
+  const grid = document.getElementById('status-grid');
+  grid.innerHTML = entries.slice(0,4).map(([s,n]) => `
+    <div class="status-pill">
+      <div class="sp-val" style="color:${colorMap[s]||'#fff'}">${n.toLocaleString()}</div>
+      <div class="sp-lbl">${s}</div>
+    </div>
+  `).join('');
+}
+
+// =============================================
+// GEO CHART
+// =============================================
+function renderGeo(data) {
+  const stateRev = {};
+  data.forEach(o => {
+    if (o.state) stateRev[o.state] = (stateRev[o.state]||0) + o.revenue;
+  });
+
+  const sorted = Object.entries(stateRev).sort((a,b)=>b[1]-a[1]).slice(0,15);
+
+  destroyChart('geo');
+  const ctx = document.getElementById('geo-chart').getContext('2d');
+  charts.geo = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: sorted.map(e=>e[0]),
+      datasets: [{
+        data: sorted.map(e=>e[1]),
+        backgroundColor: sorted.map((_,i) => `rgba(123,97,255,${1 - i*0.055})`),
+        borderRadius: 4,
+        borderSkipped: false
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      indexAxis: 'y',
+      plugins: { legend: { display: false }, tooltip: {
+        callbacks: { label: ctx => '$' + fmt(ctx.parsed.x) }
+      }},
+      scales: {
+        x: { ticks: { callback: v => '$' + fmtK(v) } },
+        y: { ticks: { font: { size: 10 } } }
+      }
+    }
+  });
+}
+
+// =============================================
+// HEATMAP
+// =============================================
+function renderHeatmap(data) {
+  const matrix = Array.from({length:7},()=>Array(24).fill(0));
+  let max = 0;
+
+  data.forEach(o => {
+    const d = o.purchase_ts;
+    if (!d || isNaN(d)) return;
+    const day = d.getDay();
+    const hr = d.getHours();
+    matrix[day][hr]++;
+    if (matrix[day][hr] > max) max = matrix[day][hr];
+  });
+
+  const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const inner = document.getElementById('heatmap-inner');
+
+  // Hour labels
+  let html = '<div class="hour-labels"><div></div>' + Array.from({length:24},(_,h)=>`<div class="hour-lbl">${String(h).padStart(2,'0')}</div>`).join('') + '</div>';
+
+  matrix.forEach((row, di) => {
+    html += `<div class="heatmap-row"><div class="hm-label">${days[di]}</div>`;
+    row.forEach((val, hi) => {
+      const t = max === 0 ? 0 : val/max;
+      const bg = t === 0 ? '#1a1a24' : `rgba(200,255,87,${Math.max(0.05,t)})`;
+      html += `<div class="hm-cell" style="background:${bg}" title="${days[di]} ${String(hi).padStart(2,'0')}:00 — ${val.toLocaleString()} orders"></div>`;
+    });
+    html += '</div>';
+  });
+
+  inner.innerHTML = html;
+}
+
+// =============================================
+// CATEGORY REVENUE BAR
+// =============================================
+function renderCatRevenue(data) {
+  const catRev = {};
+  data.forEach(o => {
+    const seen = new Set();
+    o.categories.forEach(c => {
+      if (!seen.has(c)) {
+        catRev[c] = (catRev[c]||0) + o.revenue / (o.categories.length||1);
+        seen.add(c);
+      }
+    });
+  });
+
+  const sorted = Object.entries(catRev).sort((a,b)=>b[1]-a[1]).slice(0,14);
+
+  destroyChart('catrev');
+  const ctx = document.getElementById('cat-rev-chart').getContext('2d');
+  charts.catrev = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: sorted.map(e=>e[0]),
+      datasets: [{
+        data: sorted.map(e=>e[1]),
+        backgroundColor: '#c8ff57',
+        borderRadius: 4,
+        borderSkipped: false
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: {
+        callbacks: { label: ctx => '$' + fmt(ctx.parsed.y) }
+      }},
+      scales: {
+        x: { ticks: { maxRotation: 30 } },
+        y: { ticks: { callback: v => '$' + fmtK(v) } }
+      }
+    }
+  });
+}
+
+// =============================================
+// UTILITIES
+// =============================================
+function fmt(n) {
+  if (n >= 1e6) return (n/1e6).toFixed(2) + 'M';
+  if (n >= 1e3) return (n/1e3).toFixed(1) + 'K';
+  return n.toFixed(2);
+}
+
+function fmtK(n) {
+  if (n >= 1e6) return (n/1e6).toFixed(1)+'M';
+  if (n >= 1e3) return (n/1e3).toFixed(0)+'K';
+  return n;
+}
+
+function showLoader(msg) {
+  const l = document.getElementById('loader');
+  l.style.display = 'flex';
+  document.getElementById('loader-text').textContent = msg;
+}
+
+function hideLoader() {
+  document.getElementById('loader').style.display = 'none';
+}
+</script>
+</body>
+</html>
